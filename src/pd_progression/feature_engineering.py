@@ -1,7 +1,33 @@
 from __future__ import annotations
 
+from functools import partial
+
 import numpy as np
 import pandas as pd
+
+from .parallel import parallel_groupby_apply
+
+
+# Numeric biomarker aggregates that get lag / delta / rolling features per
+# patient. Declared at module scope so the per-patient worker below is pure
+# and picklable (loky workers can't carry closures over outer locals).
+LONGITUDINAL_BASE_COLUMNS: tuple[str, ...] = (
+    "protein_n_unique",
+    "protein_n_rows",
+    "protein_npx_mean",
+    "protein_npx_std",
+    "protein_npx_min",
+    "protein_npx_max",
+    "protein_npx_median",
+    "peptide_n_unique",
+    "peptide_n_rows",
+    "peptide_protein_n_unique",
+    "peptide_abundance_mean",
+    "peptide_abundance_std",
+    "peptide_abundance_min",
+    "peptide_abundance_max",
+    "peptide_abundance_median",
+)
 
 
 def _safe_std(series: pd.Series) -> float:
@@ -9,6 +35,35 @@ def _safe_std(series: pd.Series) -> float:
         return 0.0
     value = series.std()
     return 0.0 if pd.isna(value) else float(value)
+
+
+def _compute_longitudinal_for_patient(
+    group_df: pd.DataFrame,
+    base_columns: tuple[str, ...],
+    time_col: str,
+) -> pd.DataFrame:
+    # All operations are local to one patient, so we avoid groupby() calls
+    # here entirely - each worker sees only its own patient's rows.
+    group_df = group_df.sort_values([time_col, "visit_id"]).copy()
+
+    for col in base_columns:
+        if col not in group_df.columns:
+            continue
+
+        series = group_df[col]
+        group_df[f"{col}_lag1"] = series.shift(1)
+        group_df[f"{col}_delta"] = series - group_df[f"{col}_lag1"]
+        group_df[f"{col}_rolling3_mean"] = (
+            series.rolling(window=3, min_periods=1).mean()
+        )
+        group_df[f"{col}_rolling3_std"] = (
+            series.rolling(window=3, min_periods=2).std().fillna(0.0)
+        )
+
+    group_df["visit_gap"] = group_df[time_col].diff()
+    group_df["visit_number"] = np.arange(len(group_df), dtype=np.int64)
+    group_df["has_prior_visit"] = (group_df["visit_number"] > 0).astype(int)
+    return group_df
 
 
 def aggregate_proteins(proteins: pd.DataFrame) -> pd.DataFrame:
@@ -48,60 +103,40 @@ def add_longitudinal_features(
     df: pd.DataFrame,
     group_col: str = "patient_id",
     time_col: str = "visit_month",
+    n_jobs: int = 1,
 ) -> pd.DataFrame:
     df = df.sort_values([group_col, time_col, "visit_id"]).copy()
 
-    numeric_base_cols = [
-        "protein_n_unique",
-        "protein_n_rows",
-        "protein_npx_mean",
-        "protein_npx_std",
-        "protein_npx_min",
-        "protein_npx_max",
-        "protein_npx_median",
-        "peptide_n_unique",
-        "peptide_n_rows",
-        "peptide_protein_n_unique",
-        "peptide_abundance_mean",
-        "peptide_abundance_std",
-        "peptide_abundance_min",
-        "peptide_abundance_max",
-        "peptide_abundance_median",
-    ]
+    worker = partial(
+        _compute_longitudinal_for_patient,
+        base_columns=LONGITUDINAL_BASE_COLUMNS,
+        time_col=time_col,
+    )
+    df = parallel_groupby_apply(df, group_col, worker, n_jobs=n_jobs)
 
-    for col in numeric_base_cols:
-        if col not in df.columns:
-            continue
-
-        df[f"{col}_lag1"] = df.groupby(group_col)[col].shift(1)
-        df[f"{col}_delta"] = df[col] - df[f"{col}_lag1"]
-        df[f"{col}_rolling3_mean"] = (
-            df.groupby(group_col)[col]
-            .transform(lambda s: s.rolling(window=3, min_periods=1).mean())
-        )
-        df[f"{col}_rolling3_std"] = (
-            df.groupby(group_col)[col]
-            .transform(lambda s: s.rolling(window=3, min_periods=2).std())
-            .fillna(0.0)
-        )
-
-    df["visit_gap"] = df.groupby(group_col)[time_col].diff()
-    df["visit_number"] = df.groupby(group_col).cumcount()
-    df["has_prior_visit"] = (df["visit_number"] > 0).astype(int)
-
-    for col in numeric_base_cols:
+    # Post-join fills: these touch whole columns, not per-patient state, so
+    # they do not benefit from parallelisation and must run after concat. Build
+    # the new missing-indicator columns in a single pd.concat to avoid pandas'
+    # block-manager fragmentation warning from many one-at-a-time inserts.
+    missing_indicators: dict[str, pd.Series] = {}
+    for col in LONGITUDINAL_BASE_COLUMNS:
         lag_col = f"{col}_lag1"
         if lag_col in df.columns:
-            df[f"{lag_col}_missing"] = df[lag_col].isna().astype(int)
+            missing_indicators[f"{lag_col}_missing"] = df[lag_col].isna().astype(int)
             df[lag_col] = df[lag_col].fillna(0.0)
 
         delta_col = f"{col}_delta"
         if delta_col in df.columns:
-            df[f"{delta_col}_missing"] = df[delta_col].isna().astype(int)
+            missing_indicators[f"{delta_col}_missing"] = df[delta_col].isna().astype(int)
             df[delta_col] = df[delta_col].fillna(0.0)
 
-    df["visit_gap_missing"] = df["visit_gap"].isna().astype(int)
+    missing_indicators["visit_gap_missing"] = df["visit_gap"].isna().astype(int)
     df["visit_gap"] = df["visit_gap"].fillna(0.0)
+
+    df = pd.concat(
+        [df, pd.DataFrame(missing_indicators, index=df.index)],
+        axis=1,
+    )
 
     return df
 
@@ -110,6 +145,7 @@ def build_training_dataset(
     clinical: pd.DataFrame,
     proteins: pd.DataFrame,
     peptides: pd.DataFrame,
+    n_jobs: int = 1,
 ) -> pd.DataFrame:
     protein_features = aggregate_proteins(proteins)
     peptide_features = aggregate_peptides(peptides)
@@ -153,5 +189,5 @@ def build_training_dataset(
             merged[f"{col}_missing"] = merged[col].isna().astype(int)
             merged[col] = merged[col].fillna(0.0)
 
-    merged = add_longitudinal_features(merged)
+    merged = add_longitudinal_features(merged, n_jobs=n_jobs)
     return merged.sort_values(["patient_id", "visit_month", "visit_id"]).reset_index(drop=True)

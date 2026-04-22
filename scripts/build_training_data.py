@@ -25,6 +25,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="data/cleaned/final_dataset.csv",
         help="Output path for cleaned training data",
     )
+    parser.add_argument(
+        "--n-jobs",
+        type=int,
+        default=1,
+        help="Worker count for per-patient longitudinal feature construction",
+    )
     return parser
 
 
@@ -36,6 +42,7 @@ def main() -> int:
         clinical=tables["clinical"],
         proteins=tables["proteins"],
         peptides=tables["peptides"],
+        n_jobs=args.n_jobs,
     )
 
     output_path = Path(args.output)
