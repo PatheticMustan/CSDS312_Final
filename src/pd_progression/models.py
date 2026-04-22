@@ -8,9 +8,24 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import Lasso, LinearRegression, Ridge
 
 
-def _default_random_state(params: dict[str, Any], random_seed: int) -> dict[str, Any]:
+MODEL_REGISTRY: dict[str, tuple[str, Any, bool]] = {
+    "linear_regression": ("linear_regression", LinearRegression, False),
+    "linear": ("linear_regression", LinearRegression, False),
+    "ols": ("linear_regression", LinearRegression, False),
+    "ridge": ("ridge", Ridge, False),
+    "lasso": ("lasso", Lasso, False),
+    "random_forest": ("random_forest", RandomForestRegressor, True),
+    "rf": ("random_forest", RandomForestRegressor, True),
+}
+
+
+def _normalize_model_name(model_name: str) -> str:
+    return model_name.strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _with_random_state(params: dict[str, Any], random_seed: int) -> dict[str, Any]:
     if "random_state" in params:
-        return params
+        return dict(params)
     updated = dict(params)
     updated["random_state"] = random_seed
     return updated
@@ -31,19 +46,13 @@ class SklearnRegressorWrapper:
 
 
 def build_model(model_name: str, random_seed: int = 42, **params: Any) -> SklearnRegressorWrapper:
-    model_name = model_name.lower()
-    if model_name in {"linear_regression", "linear", "ols"}:
-        estimator = LinearRegression(**params)
-        return SklearnRegressorWrapper("linear_regression", estimator, params)
-    if model_name == "ridge":
-        estimator = Ridge(**params)
-        return SklearnRegressorWrapper("ridge", estimator, params)
-    if model_name == "lasso":
-        estimator = Lasso(**params)
-        return SklearnRegressorWrapper("lasso", estimator, params)
-    if model_name in {"random_forest", "rf"}:
-        merged = _default_random_state(params, random_seed)
-        estimator = RandomForestRegressor(**merged)
-        return SklearnRegressorWrapper("random_forest", estimator, merged)
-    raise ValueError(f"Unsupported model name: {model_name}")
+    normalized_name = _normalize_model_name(model_name)
 
+    if normalized_name not in MODEL_REGISTRY:
+        supported = ", ".join(sorted(set(MODEL_REGISTRY)))
+        raise ValueError(f"Unsupported model name: {normalized_name}. Supported models: {supported}")
+
+    estimator_name, estimator_cls, needs_random_state = MODEL_REGISTRY[normalized_name]
+    fitted_params = _with_random_state(params, random_seed) if needs_random_state else dict(params)
+    estimator = estimator_cls(**fitted_params)
+    return SklearnRegressorWrapper(estimator_name, estimator, fitted_params)
