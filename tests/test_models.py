@@ -59,6 +59,19 @@ def test_build_model_preserves_explicit_random_state() -> None:
     assert wrapper.estimator.random_state == 77
 
 
+def test_build_model_supports_xgboost() -> None:
+    pytest.importorskip("xgboost")
+
+    wrapper = build_model("XGBoost", random_seed=99, n_estimators=25, max_depth=4)
+
+    assert wrapper.estimator_name == "xgboost"
+    assert wrapper.params["n_estimators"] == 25
+    assert wrapper.params["max_depth"] == 4
+    assert wrapper.params["objective"] == "reg:squarederror"
+    assert wrapper.params["random_state"] == 99
+    assert wrapper.estimator.get_params()["random_state"] == 99
+
+
 def test_build_model_rejects_unknown_model_names() -> None:
     with pytest.raises(ValueError, match=r"Unsupported model name: not_a_model"):
         build_model("not-a-model")

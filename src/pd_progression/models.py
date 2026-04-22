@@ -7,15 +7,57 @@ import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import Lasso, LinearRegression, Ridge
 
+try:  # pragma: no cover - exercised via optional dependency when installed
+    from xgboost import XGBRegressor
+except ImportError:  # pragma: no cover - handled explicitly in tests
+    XGBRegressor = None
 
-MODEL_REGISTRY: dict[str, tuple[str, Any, bool]] = {
-    "linear_regression": ("linear_regression", LinearRegression, False),
-    "linear": ("linear_regression", LinearRegression, False),
-    "ols": ("linear_regression", LinearRegression, False),
-    "ridge": ("ridge", Ridge, False),
-    "lasso": ("lasso", Lasso, False),
-    "random_forest": ("random_forest", RandomForestRegressor, True),
-    "rf": ("random_forest", RandomForestRegressor, True),
+
+def _build_linear_regression(params: dict[str, Any], _: int) -> SklearnRegressorWrapper:
+    estimator = LinearRegression(**params)
+    return SklearnRegressorWrapper("linear_regression", estimator, dict(params))
+
+
+def _build_ridge(params: dict[str, Any], _: int) -> SklearnRegressorWrapper:
+    estimator = Ridge(**params)
+    return SklearnRegressorWrapper("ridge", estimator, dict(params))
+
+
+def _build_lasso(params: dict[str, Any], _: int) -> SklearnRegressorWrapper:
+    estimator = Lasso(**params)
+    return SklearnRegressorWrapper("lasso", estimator, dict(params))
+
+
+def _build_random_forest(params: dict[str, Any], random_seed: int) -> SklearnRegressorWrapper:
+    fitted_params = _with_random_state(params, random_seed)
+    estimator = RandomForestRegressor(**fitted_params)
+    return SklearnRegressorWrapper("random_forest", estimator, fitted_params)
+
+
+def _build_xgboost(params: dict[str, Any], random_seed: int) -> SklearnRegressorWrapper:
+    if XGBRegressor is None:
+        raise ImportError(
+            "xgboost is not installed. Install the project dependencies to use the xgboost baseline."
+        )
+
+    fitted_params = dict(params)
+    fitted_params.setdefault("objective", "reg:squarederror")
+    fitted_params = _with_random_state(fitted_params, random_seed)
+    estimator = XGBRegressor(**fitted_params)
+    return SklearnRegressorWrapper("xgboost", estimator, fitted_params)
+
+
+MODEL_REGISTRY: dict[str, tuple[str, Any]] = {
+    "linear_regression": ("linear_regression", _build_linear_regression),
+    "linear": ("linear_regression", _build_linear_regression),
+    "ols": ("linear_regression", _build_linear_regression),
+    "ridge": ("ridge", _build_ridge),
+    "lasso": ("lasso", _build_lasso),
+    "random_forest": ("random_forest", _build_random_forest),
+    "rf": ("random_forest", _build_random_forest),
+    "xgboost": ("xgboost", _build_xgboost),
+    "xgb": ("xgboost", _build_xgboost),
+    "xg_boost": ("xgboost", _build_xgboost),
 }
 
 
@@ -52,7 +94,5 @@ def build_model(model_name: str, random_seed: int = 42, **params: Any) -> Sklear
         supported = ", ".join(sorted(set(MODEL_REGISTRY)))
         raise ValueError(f"Unsupported model name: {normalized_name}. Supported models: {supported}")
 
-    estimator_name, estimator_cls, needs_random_state = MODEL_REGISTRY[normalized_name]
-    fitted_params = _with_random_state(params, random_seed) if needs_random_state else dict(params)
-    estimator = estimator_cls(**fitted_params)
-    return SklearnRegressorWrapper(estimator_name, estimator, fitted_params)
+    estimator_name, builder = MODEL_REGISTRY[normalized_name]
+    return builder(dict(params), random_seed)
