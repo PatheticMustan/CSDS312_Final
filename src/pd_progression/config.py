@@ -31,6 +31,8 @@ class BaselineRunConfig:
             values["feature_columns"] = tuple(values["feature_columns"])
         if "id_columns" in values and values["id_columns"] is not None:
             values["id_columns"] = tuple(values["id_columns"])
+        if "model_params" in values:
+            values["model_params"] = dict(values["model_params"] or {})
         return cls(**values)
 
     def to_dict(self) -> dict[str, Any]:
@@ -40,4 +42,3 @@ class BaselineRunConfig:
         payload["feature_columns"] = list(self.feature_columns)
         payload["id_columns"] = list(self.id_columns)
         return payload
-

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Iterable
 
@@ -70,6 +70,7 @@ def run_training_pipeline(df: pd.DataFrame, config: BaselineRunConfig) -> Traini
     split = _split_dataframe(df, config)
     X, y, feature_columns = prepare_xy(df, config)
     model = build_model(config.model_name, random_seed=config.random_seed, **config.model_params)
+    resolved_config = replace(config, feature_columns=tuple(feature_columns))
 
     X_train = X.loc[list(split.train_index)]
     y_train = y.loc[list(split.train_index)]
@@ -94,7 +95,7 @@ def run_training_pipeline(df: pd.DataFrame, config: BaselineRunConfig) -> Traini
         random_seed=config.random_seed,
     )
     tracker.ensure()
-    tracker.save_config(config.to_dict())
+    tracker.save_config(resolved_config.to_dict())
     tracker.save_metrics(metrics)
     tracker.save_predictions(prediction_frame)
     tracker.save_model(model)
@@ -103,4 +104,3 @@ def run_training_pipeline(df: pd.DataFrame, config: BaselineRunConfig) -> Traini
 
 def summarize_runs(results: dict[str, TrainingResult]) -> pd.DataFrame:
     return metrics_table({name: result.metrics for name, result in results.items()})
-
