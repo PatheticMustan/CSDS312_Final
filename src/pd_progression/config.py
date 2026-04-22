@@ -19,6 +19,7 @@ class BaselineRunConfig:
     group_column: str = "patient_id"
     time_column: str = "visit_month"
     model_params: dict[str, Any] = field(default_factory=dict)
+    n_jobs: int = 1
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "BaselineRunConfig":

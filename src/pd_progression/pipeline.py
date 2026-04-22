@@ -97,7 +97,16 @@ def run_training_pipeline(df: pd.DataFrame, config: BaselineRunConfig) -> Traini
 
     split = _split_dataframe(df, config)
     X, y, feature_columns = prepare_xy(df, config)
-    model = build_model(config.model_name, random_seed=config.random_seed, **config.model_params)
+    # An `n_jobs` inside `model_params` (rarely used, but legal) must win over
+    # the top-level config knob so users can still pin parallelism per model.
+    model_params = dict(config.model_params)
+    effective_n_jobs = int(model_params.pop("n_jobs", config.n_jobs))
+    model = build_model(
+        config.model_name,
+        random_seed=config.random_seed,
+        n_jobs=effective_n_jobs,
+        **model_params,
+    )
     resolved_config = replace(config, feature_columns=tuple(feature_columns))
 
     X_train = X.loc[list(split.train_index)]

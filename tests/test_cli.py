@@ -41,6 +41,7 @@ def test_load_config_merges_config_file_and_cli_model_params(tmp_path: Path) -> 
         seed=None,
         model_params='{"max_depth": 4, "n_estimators": 75}',
         output_dir=None,
+        n_jobs=None,
     )
 
     config = load_config(args)
@@ -53,3 +54,23 @@ def test_load_config_merges_config_file_and_cli_model_params(tmp_path: Path) -> 
     assert config.random_seed == 17
     assert config.feature_columns == ("feature_a", "feature_b")
     assert config.model_params == {"n_estimators": 75, "max_depth": 4}
+    assert config.n_jobs == 1
+
+
+def test_load_config_picks_up_n_jobs_from_cli(tmp_path: Path) -> None:
+    args = Namespace(
+        config=None,
+        data="data/cleaned/final_dataset.csv",
+        model="random_forest",
+        target="updrs_1",
+        split=None,
+        seed=None,
+        model_params=None,
+        output_dir=None,
+        n_jobs=8,
+    )
+
+    config = load_config(args)
+
+    assert config.n_jobs == 8
+    assert config.model_name == "random_forest"

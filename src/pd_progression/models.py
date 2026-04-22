@@ -56,6 +56,12 @@ def _build_xgboost(params: dict[str, Any], random_seed: int) -> SklearnRegressor
     return SklearnRegressorWrapper("xgboost", estimator, fitted_params)
 
 
+# Estimators that accept an `n_jobs` parameter. Linear / Ridge / Lasso do not
+# expose `n_jobs` in modern sklearn, so we only inject it for parallel-capable
+# models. An explicit `n_jobs` in `model_params` always wins.
+_N_JOBS_AWARE_MODELS: frozenset[str] = frozenset({"random_forest", "xgboost"})
+
+
 MODEL_REGISTRY: dict[str, tuple[str, Any]] = {
     "linear_regression": ("linear_regression", _build_linear_regression),
     "linear": ("linear_regression", _build_linear_regression),
@@ -96,7 +102,12 @@ class SklearnRegressorWrapper:
         return self.estimator.predict(X)
 
 
-def build_model(model_name: str, random_seed: int = 42, **params: Any) -> SklearnRegressorWrapper:
+def build_model(
+    model_name: str,
+    random_seed: int = 42,
+    n_jobs: int = 1,
+    **params: Any,
+) -> SklearnRegressorWrapper:
     normalized_name = _normalize_model_name(model_name)
 
     if normalized_name not in MODEL_REGISTRY:
@@ -104,4 +115,7 @@ def build_model(model_name: str, random_seed: int = 42, **params: Any) -> Sklear
         raise ValueError(f"Unsupported model name: {normalized_name}. Supported models: {supported}")
 
     estimator_name, builder = MODEL_REGISTRY[normalized_name]
-    return builder(dict(params), random_seed)
+    effective_params = dict(params)
+    if estimator_name in _N_JOBS_AWARE_MODELS:
+        effective_params.setdefault("n_jobs", n_jobs)
+    return builder(effective_params, random_seed)

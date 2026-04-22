@@ -19,6 +19,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, help="Random seed")
     parser.add_argument("--model-params", help="JSON object with model hyperparameters")
     parser.add_argument("--output-dir", help="Output directory")
+    parser.add_argument(
+        "--n-jobs",
+        type=int,
+        help="Parallel worker count for parallel-aware models (RF, XGBoost)",
+    )
     return parser
 
 
@@ -48,6 +53,8 @@ def load_config(args: argparse.Namespace) -> BaselineRunConfig:
         payload["split_strategy"] = args.split
     if args.seed is not None:
         payload["random_seed"] = args.seed
+    if args.n_jobs is not None:
+        payload["n_jobs"] = args.n_jobs
 
     model_params = dict(payload.get("model_params") or {})
     model_params.update(_parse_model_params(args.model_params))

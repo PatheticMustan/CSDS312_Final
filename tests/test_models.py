@@ -68,6 +68,19 @@ def test_build_model_preserves_explicit_random_state() -> None:
     assert wrapper.estimator.random_state == 77
 
 
+def test_build_model_injects_n_jobs_for_random_forest() -> None:
+    wrapper = build_model("random_forest", n_jobs=4)
+
+    assert wrapper.params["n_jobs"] == 4
+    assert wrapper.estimator.n_jobs == 4
+
+
+def test_build_model_does_not_pass_n_jobs_to_linear_models() -> None:
+    wrapper = build_model("ridge", n_jobs=8, alpha=1.0)
+
+    assert "n_jobs" not in wrapper.params
+
+
 def test_build_model_supports_xgboost() -> None:
     pytest.importorskip("xgboost")
 
