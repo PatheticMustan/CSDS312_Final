@@ -15,6 +15,11 @@ from .tracking import ExperimentTracker
 
 IDENTIFIER_COLUMNS = {"patient_id", "visit_id", "visit_month"}
 
+# All UPDRS score columns are potential targets, so none of them should ever
+# appear on the feature side (using updrs_2/3/4 to predict updrs_1 is leakage,
+# and updrs_4 is also ~40% NaN which breaks NaN-intolerant linear models).
+TARGET_LIKE_PREFIXES: tuple[str, ...] = ("updrs_",)
+
 
 @dataclass
 class TrainingResult:
@@ -22,6 +27,10 @@ class TrainingResult:
     predictions: pd.DataFrame
     feature_columns: list[str]
     run_dir: Path
+
+
+def _is_target_like(column: str) -> bool:
+    return any(column.startswith(prefix) for prefix in TARGET_LIKE_PREFIXES)
 
 
 def select_feature_columns(df: pd.DataFrame, config: BaselineRunConfig) -> list[str]:
@@ -32,6 +41,8 @@ def select_feature_columns(df: pd.DataFrame, config: BaselineRunConfig) -> list[
     feature_columns = []
     for column in df.columns:
         if column in excluded:
+            continue
+        if _is_target_like(column):
             continue
         if pd.api.types.is_numeric_dtype(df[column]):
             feature_columns.append(column)
@@ -45,6 +56,15 @@ def prepare_xy(df: pd.DataFrame, config: BaselineRunConfig) -> tuple[pd.DataFram
     if config.target_column not in df.columns:
         raise ValueError(f"Target column not found: {config.target_column}")
     return df[feature_columns], df[config.target_column], feature_columns
+
+
+def _drop_missing_rows(df: pd.DataFrame, config: BaselineRunConfig) -> pd.DataFrame:
+    if config.target_column not in df.columns:
+        raise ValueError(f"Target column not found: {config.target_column}")
+    feature_columns = select_feature_columns(df, config)
+    subset = [config.target_column] + feature_columns
+    cleaned = df.dropna(subset=subset).reset_index(drop=True)
+    return cleaned
 
 
 def _split_dataframe(df: pd.DataFrame, config: BaselineRunConfig):
@@ -67,6 +87,14 @@ def _split_dataframe(df: pd.DataFrame, config: BaselineRunConfig):
 
 
 def run_training_pipeline(df: pd.DataFrame, config: BaselineRunConfig) -> TrainingResult:
+    original_rows = len(df)
+    df = _drop_missing_rows(df, config)
+    dropped_rows = original_rows - len(df)
+    if df.empty:
+        raise ValueError(
+            f"No rows remain after dropping NaN target/features for '{config.target_column}'"
+        )
+
     split = _split_dataframe(df, config)
     X, y, feature_columns = prepare_xy(df, config)
     model = build_model(config.model_name, random_seed=config.random_seed, **config.model_params)
@@ -80,6 +108,9 @@ def run_training_pipeline(df: pd.DataFrame, config: BaselineRunConfig) -> Traini
     model.fit(X_train, y_train)
     y_pred = model.predict(X_val)
     metrics = compute_regression_metrics(y_val, y_pred)
+    metrics["n_train"] = int(len(X_train))
+    metrics["n_val"] = int(len(X_val))
+    metrics["n_dropped_missing"] = int(dropped_rows)
     prediction_frame = pd.DataFrame(
         {
             "row_index": list(split.validation_index),

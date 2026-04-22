@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import Lasso, LinearRegression, Ridge
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 # Keep the test runnable both under pytest and as a standalone file in an IDE.
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,25 +23,32 @@ def test_build_model_resolves_linear_aliases() -> None:
 
     assert isinstance(wrapper, SklearnRegressorWrapper)
     assert wrapper.estimator_name == "linear_regression"
-    assert isinstance(wrapper.estimator, LinearRegression)
+    assert isinstance(wrapper.estimator, Pipeline)
+    assert isinstance(wrapper.estimator.named_steps["scaler"], StandardScaler)
+    inner = wrapper.estimator.named_steps["model"]
+    assert isinstance(inner, LinearRegression)
     assert wrapper.params == {"fit_intercept": False}
-    assert wrapper.estimator.fit_intercept is False
+    assert inner.fit_intercept is False
 
 
 def test_build_model_supports_ridge_and_lasso() -> None:
     ridge = build_model("ridge", alpha=2.5)
     lasso = build_model("LASSO", alpha=0.1, max_iter=5000)
 
-    assert isinstance(ridge.estimator, Ridge)
+    assert isinstance(ridge.estimator, Pipeline)
+    ridge_inner = ridge.estimator.named_steps["model"]
+    assert isinstance(ridge_inner, Ridge)
     assert ridge.estimator_name == "ridge"
     assert ridge.params == {"alpha": 2.5}
-    assert ridge.estimator.alpha == 2.5
+    assert ridge_inner.alpha == 2.5
 
-    assert isinstance(lasso.estimator, Lasso)
+    assert isinstance(lasso.estimator, Pipeline)
+    lasso_inner = lasso.estimator.named_steps["model"]
+    assert isinstance(lasso_inner, Lasso)
     assert lasso.estimator_name == "lasso"
     assert lasso.params == {"alpha": 0.1, "max_iter": 5000}
-    assert lasso.estimator.alpha == 0.1
-    assert lasso.estimator.max_iter == 5000
+    assert lasso_inner.alpha == 0.1
+    assert lasso_inner.max_iter == 5000
 
 
 def test_build_model_injects_random_state_for_random_forest() -> None:

@@ -6,6 +6,8 @@ from typing import Any
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import Lasso, LinearRegression, Ridge
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 try:  # pragma: no cover - exercised via optional dependency when installed
     from xgboost import XGBRegressor
@@ -13,18 +15,25 @@ except ImportError:  # pragma: no cover - handled explicitly in tests
     XGBRegressor = None
 
 
+def _wrap_with_scaler(estimator: Any) -> Pipeline:
+    # Scale features before fitting scale-sensitive linear models. Prevents the
+    # ill-conditioned-matrix warnings that appear when feature magnitudes span
+    # many orders of magnitude (e.g. NPX ~ 1e1 vs peptide abundance ~ 1e6).
+    return Pipeline([("scaler", StandardScaler()), ("model", estimator)])
+
+
 def _build_linear_regression(params: dict[str, Any], _: int) -> SklearnRegressorWrapper:
-    estimator = LinearRegression(**params)
+    estimator = _wrap_with_scaler(LinearRegression(**params))
     return SklearnRegressorWrapper("linear_regression", estimator, dict(params))
 
 
 def _build_ridge(params: dict[str, Any], _: int) -> SklearnRegressorWrapper:
-    estimator = Ridge(**params)
+    estimator = _wrap_with_scaler(Ridge(**params))
     return SklearnRegressorWrapper("ridge", estimator, dict(params))
 
 
 def _build_lasso(params: dict[str, Any], _: int) -> SklearnRegressorWrapper:
-    estimator = Lasso(**params)
+    estimator = _wrap_with_scaler(Lasso(**params))
     return SklearnRegressorWrapper("lasso", estimator, dict(params))
 
 
