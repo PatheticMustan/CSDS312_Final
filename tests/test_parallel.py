@@ -15,7 +15,6 @@ if str(SRC) not in sys.path:
 from pd_progression.parallel import parallel_groupby_apply
 
 
-# Must be a top-level function so loky workers can pickle it.
 def _patient_rolling_mean(group: pd.DataFrame) -> pd.DataFrame:
     group = group.sort_values("visit_month").copy()
     group["value_rolling2"] = (

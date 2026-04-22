@@ -15,9 +15,7 @@ from .tracking import ExperimentTracker
 
 IDENTIFIER_COLUMNS = {"patient_id", "visit_id", "visit_month"}
 
-# All UPDRS score columns are potential targets, so none of them should ever
-# appear on the feature side (using updrs_2/3/4 to predict updrs_1 is leakage,
-# and updrs_4 is also ~40% NaN which breaks NaN-intolerant linear models).
+
 TARGET_LIKE_PREFIXES: tuple[str, ...] = ("updrs_",)
 
 
@@ -97,8 +95,6 @@ def run_training_pipeline(df: pd.DataFrame, config: BaselineRunConfig) -> Traini
 
     split = _split_dataframe(df, config)
     X, y, feature_columns = prepare_xy(df, config)
-    # An `n_jobs` inside `model_params` (rarely used, but legal) must win over
-    # the top-level config knob so users can still pin parallelism per model.
     model_params = dict(config.model_params)
     effective_n_jobs = int(model_params.pop("n_jobs", config.n_jobs))
     model = build_model(

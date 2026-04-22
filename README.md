@@ -8,7 +8,7 @@ Implemented so far:
 
 - Data cleaning and validation for clinical, protein, and peptide tables
 - Feature engineering pipeline with protein/peptide aggregation and per-patient longitudinal features (lag, delta, rolling mean/std, visit gap, missingness indicators)
-- Baseline model registry in `src/pd_progression/models.py` with supported models:
+- Supported models:
   - `linear_regression`
   - `ridge`
   - `lasso`
@@ -18,21 +18,20 @@ Implemented so far:
 - Patient-level and time-aware validation splits
 - Automatic NaN handling in the training pipeline (drops rows with missing target or features, excludes all `updrs_*` columns from features to prevent target leakage)
 - Opt-in parallel per-patient preprocessing via a shared `parallel_groupby_apply` helper and an `n_jobs` knob on both the feature-engineering pipeline and the baseline trainer
-- CLI entrypoints for building the cleaned dataset and running baseline experiments
+- CLI entrypoints for running baseline experiments
 - Saved run artifacts:
   - `config.json`
-  - `metrics.json` (with `rmse`, `mae`, `smape`, `r2`, `n_train`, `n_val`, `n_dropped_missing`)
+  - `metrics.json`
   - `predictions.csv`
   - `model.pkl`
 - Unit and smoke tests for model creation, CLI config loading, pipeline execution, patient-level splits, parallel groupby semantics, and feature-engineering parallel invariants
 
 Not implemented yet:
 
-- Per-stage benchmark harness and scaling study
+- Runtime benchmarking
 - SLURM / HPC job scripts
-- Systematic hyperparameter tuning workflow
+- Full hyperparameter tuning workflow
 - Feature importance analysis
-- Singularity container
 
 ## Repository Layout
 
@@ -40,7 +39,7 @@ Not implemented yet:
 - `scripts/` - executable wrappers for building the training dataset, training baselines, and evaluating saved predictions
 - `data/cleaned/` - prepared dataset used for baseline runs
 - `data/raw/` - raw AMP-PD competition files
-- `results/` - saved run outputs (per-run timestamped directories)
+- `results/` - saved run outputs
 - `tests/` - pytest suite
 
 ## Requirements
@@ -48,7 +47,7 @@ Not implemented yet:
 - Python 3.10+
 - `numpy`
 - `pandas`
-- `scikit-learn` (pulls in `joblib`)
+- `scikit-learn`
 - `xgboost`
 
 Install the project in editable mode:
@@ -89,19 +88,18 @@ The per-patient longitudinal feature step is parallelizable via `--n-jobs`:
 python scripts/build_training_data.py --n-jobs 4
 ```
 
-Output is byte-identical regardless of worker count; `--n-jobs` only affects wall time.
 
 ### Missing values
 
 The training pipeline handles missing values automatically:
 
 - Rows where the selected target column is `NaN` are dropped before splitting.
-- All `updrs_*` columns are excluded from the feature matrix so training on `updrs_1` cannot leak `updrs_2/3/4` (and avoids the `~40%` `NaN` rate on `updrs_4`).
-- Linear models (`linear_regression`, `ridge`, `lasso`) are wrapped in a `StandardScaler` pipeline to prevent the ill-conditioned-matrix warnings that appear on unscaled multi-scale features.
+- All `updrs_*` columns are excluded from the feature matrix so training on `updrs_1` cannot leak `updrs_2/3/4`.
+- Linear models (`linear_regression`, `ridge`, `lasso`) are wrapped in a `StandardScaler` pipeline to prevent the warnings that appear on unscaled multi-scale features.
 
 The number of dropped rows is reported in each run's `metrics.json` as `n_dropped_missing`.
 
-The legacy helper `scripts/clean_nan_data.py` (which writes a separately cleaned CSV) is still available but is no longer required for baseline runs.
+The helper `scripts/clean_nan_data.py` is still available but is no longer required for baseline runs.
 
 ## Running a Baseline Experiment
 
@@ -139,8 +137,8 @@ python scripts/train_baseline.py \
 
 The package exposes a single `--n-jobs` knob that both the dataset builder and the baseline trainer accept. It controls:
 
-- Per-patient longitudinal feature construction (`add_longitudinal_features`), via the shared `parallel_groupby_apply` helper in `src/pd_progression/parallel.py`.
-- Any baseline model that supports `n_jobs` natively (currently `random_forest` and `xgboost`). Linear models are unaffected.
+- Per-patient longitudinal feature construction (`add_longitudinal_features`).
+- Any baseline model that supports `n_jobs` natively (currently `random_forest` and `xgboost`).
 
 Example:
 
@@ -149,7 +147,7 @@ python scripts/build_training_data.py --n-jobs 8
 python scripts/train_baseline.py --data data/cleaned/final_dataset.csv --model random_forest --n-jobs 8
 ```
 
-`n_jobs = 1` preserves the original single-threaded behavior exactly; the parallel path uses a serial-equivalent fast path when `n_jobs <= 1`, so there is no joblib overhead in that case.
+`n_jobs = 1` preserves the original single-threaded behavior exactly. The parallel path uses a serial-equivalent fast path when `n_jobs <= 1`, so there is no joblib overhead in that case.
 
 ## Passing Hyperparameters
 
@@ -169,7 +167,7 @@ Examples:
 - Random Forest: `{"n_estimators": 300, "max_depth": 12}`
 - XGBoost: `{"n_estimators": 500, "learning_rate": 0.05, "max_depth": 6}`
 
-You can also supply a JSON config file with the same keys used by `BaselineRunConfig`, including the new top-level `n_jobs` field.
+You can also supply a JSON config file with the same keys used by `BaselineRunConfig`.
 
 ## Config File Example
 
@@ -200,8 +198,8 @@ python scripts/train_baseline.py --config path/to/config.json
 
 Each training run writes to a timestamped directory under `results/runs/`. The run directory contains:
 
-- `config.json` - resolved run configuration, including selected feature columns and `n_jobs`
-- `metrics.json` - regression metrics for the validation split, plus `n_train`, `n_val`, and `n_dropped_missing`
+- `config.json` - resolved run configuration, including selected feature columns
+- `metrics.json` - regression metrics for the validation split
 - `predictions.csv` - row-level predictions for the validation fold
 - `model.pkl` - serialized fitted model wrapper
 
@@ -238,8 +236,6 @@ python tests/test_splits.py
 python tests/test_parallel.py
 python tests/test_feature_engineering.py
 ```
-
-The parallel correctness invariants (`test_parallel.py`, `test_feature_engineering.py`) verify that `n_jobs=1` and `n_jobs=N` produce byte-identical outputs, which is the guarantee the benchmark harness will rely on.
 
 ## Notes on the Current Phase
 

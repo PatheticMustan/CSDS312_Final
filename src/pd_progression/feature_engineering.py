@@ -8,9 +8,6 @@ import pandas as pd
 from .parallel import parallel_groupby_apply
 
 
-# Numeric biomarker aggregates that get lag / delta / rolling features per
-# patient. Declared at module scope so the per-patient worker below is pure
-# and picklable (loky workers can't carry closures over outer locals).
 LONGITUDINAL_BASE_COLUMNS: tuple[str, ...] = (
     "protein_n_unique",
     "protein_n_rows",
@@ -42,8 +39,7 @@ def _compute_longitudinal_for_patient(
     base_columns: tuple[str, ...],
     time_col: str,
 ) -> pd.DataFrame:
-    # All operations are local to one patient, so we avoid groupby() calls
-    # here entirely - each worker sees only its own patient's rows.
+
     group_df = group_df.sort_values([time_col, "visit_id"]).copy()
 
     for col in base_columns:
@@ -114,10 +110,7 @@ def add_longitudinal_features(
     )
     df = parallel_groupby_apply(df, group_col, worker, n_jobs=n_jobs)
 
-    # Post-join fills: these touch whole columns, not per-patient state, so
-    # they do not benefit from parallelisation and must run after concat. Build
-    # the new missing-indicator columns in a single pd.concat to avoid pandas'
-    # block-manager fragmentation warning from many one-at-a-time inserts.
+
     missing_indicators: dict[str, pd.Series] = {}
     for col in LONGITUDINAL_BASE_COLUMNS:
         lag_col = f"{col}_lag1"

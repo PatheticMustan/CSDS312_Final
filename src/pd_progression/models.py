@@ -9,16 +9,14 @@ from sklearn.linear_model import Lasso, LinearRegression, Ridge
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-try:  # pragma: no cover - exercised via optional dependency when installed
+try:
     from xgboost import XGBRegressor
-except ImportError:  # pragma: no cover - handled explicitly in tests
+except ImportError:
     XGBRegressor = None
 
 
 def _wrap_with_scaler(estimator: Any) -> Pipeline:
-    # Scale features before fitting scale-sensitive linear models. Prevents the
-    # ill-conditioned-matrix warnings that appear when feature magnitudes span
-    # many orders of magnitude (e.g. NPX ~ 1e1 vs peptide abundance ~ 1e6).
+    # Scale features before fitting scale-sensitive linear models.
     return Pipeline([("scaler", StandardScaler()), ("model", estimator)])
 
 
@@ -56,9 +54,7 @@ def _build_xgboost(params: dict[str, Any], random_seed: int) -> SklearnRegressor
     return SklearnRegressorWrapper("xgboost", estimator, fitted_params)
 
 
-# Estimators that accept an `n_jobs` parameter. Linear / Ridge / Lasso do not
-# expose `n_jobs` in modern sklearn, so we only inject it for parallel-capable
-# models. An explicit `n_jobs` in `model_params` always wins.
+# Estimators that accept an `n_jobs` parameterfor parallel-aware models.
 _N_JOBS_AWARE_MODELS: frozenset[str] = frozenset({"random_forest", "xgboost"})
 
 

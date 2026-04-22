@@ -32,7 +32,6 @@ def _make_merged_frame(n_patients: int = 6, visits_per_patient: int = 5) -> pd.D
                 }
             )
     df = pd.DataFrame(rows)
-    # Fill the longitudinal base columns with deterministic per-patient values.
     for i, col in enumerate(LONGITUDINAL_BASE_COLUMNS):
         df[col] = df["patient_id"] * (i + 1) + df["visit_month"].astype(float)
     return df
@@ -89,8 +88,6 @@ def test_add_longitudinal_features_parallel_matches_serial() -> None:
     serial = add_longitudinal_features(df, n_jobs=1)
     parallel = add_longitudinal_features(df, n_jobs=2)
 
-    # Sort both by the canonical ordering because the serial path returns rows
-    # in input order within each group; parallel must match that up to concat.
     sort_cols = ["patient_id", "visit_month", "visit_id"]
     pd.testing.assert_frame_equal(
         serial.sort_values(sort_cols).reset_index(drop=True),
@@ -116,7 +113,6 @@ def test_add_longitudinal_features_produces_expected_schema() -> None:
     assert "visit_number" in out.columns
     assert "has_prior_visit" in out.columns
 
-    # No NaNs should survive the post-join fills.
     engineered_cols = [c for c in out.columns if c not in {"patient_id", "visit_id"}]
     assert not out[engineered_cols].isna().any().any()
 
@@ -131,8 +127,6 @@ def test_build_training_dataset_parallel_matches_serial() -> None:
 
 
 def test_add_longitudinal_features_lag_and_delta_values() -> None:
-    # Single patient, simple ramp; verify lag / delta / rolling semantics
-    # survived the refactor correctly.
     df = pd.DataFrame(
         {
             "patient_id": [1, 1, 1],
