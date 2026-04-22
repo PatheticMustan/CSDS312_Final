@@ -98,6 +98,12 @@ python scripts/train_baseline.py \
 - `patient`
 - `time_aware`
 
+### Split behavior
+
+- `patient` split keeps all visits from a given patient on the same side of the train/validation boundary.
+- `time_aware` split keeps earlier visits for training and holds out later visits for validation within each patient.
+- Both strategies use `validation_fraction` to determine how much data is reserved for validation.
+
 ## Passing Hyperparameters
 
 You can pass model-specific hyperparameters from the CLI with `--model-params` as a JSON object:
@@ -175,6 +181,7 @@ Individual test files can also be run directly in an IDE or with Python:
 python tests/test_models.py
 python tests/test_cli.py
 python tests/test_pipeline.py
+python tests/test_splits.py
 ```
 
 ## Notes on the Current Phase
