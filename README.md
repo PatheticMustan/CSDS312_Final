@@ -63,13 +63,23 @@ data/cleaned/final_dataset.csv
 
 This file is the output of the feature engineering pipeline and contains the clinical target along with numeric features used for baseline training.
 
+Some rows in the prepared dataset still contain missing values. Before running the baseline models, clean the dataset with:
+
+```bash
+python3 scripts/clean_nan_data.py \
+  --input data/cleaned/final_dataset.csv \
+  --output data/cleaned/final_dataset_no_nan.csv
+```
+
+The cleaned output removes rows where the target is missing and imputes remaining NaNs so the scikit-learn baselines can train without errors.
+
 ## Running a Baseline Experiment
 
 Use the training wrapper script:
 
 ```bash
 python scripts/train_baseline.py \
-  --data data/cleaned/final_dataset.csv \
+  --data data/cleaned/final_dataset_no_nan.csv \
   --model ridge \
   --target updrs_1 \
   --split patient \
@@ -94,7 +104,7 @@ You can pass model-specific hyperparameters from the CLI with `--model-params` a
 
 ```bash
 python scripts/train_baseline.py \
-  --data data/cleaned/final_dataset.csv \
+  --data data/cleaned/final_dataset_no_nan.csv \
   --model random_forest \
   --model-params '{"n_estimators": 200, "max_depth": 8}'
 ```
@@ -117,7 +127,7 @@ You can also supply a JSON config file with the same keys used by `BaselineRunCo
   "split_strategy": "time_aware",
   "random_seed": 42,
   "validation_fraction": 0.2,
-  "data_path": "data/cleaned/final_dataset.csv",
+  "data_path": "data/cleaned/final_dataset_no_nan.csv",
   "output_dir": "results",
   "model_params": {
     "n_estimators": 400,
