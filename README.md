@@ -18,6 +18,12 @@ Implemented so far:
 - Patient-level and time-aware validation splits
 - Automatic NaN handling in the training pipeline (drops rows with missing target or features, excludes all `updrs_*` columns from features to prevent target leakage)
 - Opt-in parallel per-patient preprocessing via a shared `parallel_groupby_apply` helper and an `n_jobs` knob on both the feature-engineering pipeline and the baseline trainer
+- Benchmark harness for serial vs parallel dataset building and training runs
+- Feature-importance export for trained linear, random-forest, and XGBoost models
+- HPC assets:
+  - pinned dependency file (`requirements-hpc.txt`)
+  - Apptainer/Singularity recipe (`containers/apptainer.def`)
+  - SLURM scripts for build, train, benchmark, and feature-importance jobs
 - CLI entrypoints for running baseline experiments
 - Saved run artifacts:
   - `config.json`
@@ -28,15 +34,16 @@ Implemented so far:
 
 Not implemented yet:
 
-- Runtime benchmarking
-- SLURM / HPC job scripts
 - Full hyperparameter tuning workflow
-- Feature importance analysis
+- Checked-in benchmark results / trained model artifacts
+- Final report plots summarizing runtime scaling and feature importance
 
 ## Repository Layout
 
 - `src/pd_progression/` - package code for loading, preprocessing, feature engineering, modeling, splits, tracking, and parallelism
 - `scripts/` - executable wrappers for building the training dataset, training baselines, and evaluating saved predictions
+- `hpc/` - SLURM batch scripts plus a virtualenv bootstrap helper
+- `containers/` - Apptainer/Singularity recipe for portable cluster execution
 - `data/cleaned/` - prepared dataset used for baseline runs
 - `data/raw/` - raw AMP-PD competition files
 - `results/` - saved run outputs
@@ -45,9 +52,11 @@ Not implemented yet:
 ## Requirements
 
 - Python 3.10+
-- `numpy`
+- `numpy<2`
 - `pandas`
+- `scipy`
 - `scikit-learn`
+- `joblib`
 - `xgboost`
 
 Install the project in editable mode:
@@ -60,6 +69,12 @@ python -m pip install -e .
 
 ```bash
 python -m pip install pytest
+```
+
+For a fresh Linux or HPC environment, use the pinned dependency file instead:
+
+```bash
+python -m pip install -r requirements-hpc.txt
 ```
 
 ## Data
@@ -203,6 +218,10 @@ Each training run writes to a timestamped directory under `results/runs/`. The r
 - `predictions.csv` - row-level predictions for the validation fold
 - `model.pkl` - serialized fitted model wrapper
 
+Feature-importance export adds:
+
+- `feature_importance.csv` - ranked features extracted from `coef_` or `feature_importances_`
+
 ## Metrics
 
 The baseline pipeline reports:
@@ -217,6 +236,64 @@ Plus the sample-size counters:
 - `n_train`
 - `n_val`
 - `n_dropped_missing`
+
+## Feature Importance
+
+Export feature importances from a completed run:
+
+```bash
+python scripts/export_feature_importance.py \
+  --run-dir results/runs/<timestamp_model_split_seed> \
+  --top-k 20
+```
+
+The script reads `config.json` to recover the resolved feature order, loads `model.pkl`, and writes `feature_importance.csv` into the same run directory by default.
+
+For linear models, the ranking uses absolute coefficient magnitude. For `random_forest` and `xgboost`, it uses native `feature_importances_`.
+
+## Benchmarking
+
+Benchmark dataset construction and model training across multiple worker counts:
+
+```bash
+python scripts/benchmark_pipeline.py \
+  --raw-dir data/raw/amp-parkinsons-disease-progression-prediction \
+  --data data/cleaned/final_dataset.csv \
+  --models random_forest,xgboost \
+  --targets updrs_1,updrs_2 \
+  --n-jobs-values 1,2,4,8 \
+  --repeat 3 \
+  --output results/benchmarks/benchmark_results.csv
+```
+
+The benchmark output is a flat CSV with one row per stage / worker-count / repeat. Build-stage rows cover the end-to-end raw-table preprocessing flow. Training-stage rows include runtime plus validation metrics for each completed run.
+
+## HPC Usage
+
+Create a cluster-friendly virtual environment from the pinned dependency set:
+
+```bash
+bash hpc/setup_venv.sh
+```
+
+Submit common jobs with SLURM:
+
+```bash
+sbatch hpc/build_dataset.sbatch
+sbatch hpc/train_baseline.sbatch
+sbatch hpc/benchmark_pipeline.sbatch
+sbatch hpc/export_feature_importance.sbatch
+```
+
+Each SLURM script accepts environment-variable overrides. Examples:
+
+```bash
+MODEL=xgboost TARGET=updrs_2 N_JOBS=8 sbatch hpc/train_baseline.sbatch
+N_JOBS_VALUES=1,2,4,8 MODELS=random_forest,xgboost sbatch hpc/benchmark_pipeline.sbatch
+RUN_DIR=$PWD/results/runs/<run_name> sbatch hpc/export_feature_importance.sbatch
+```
+
+For containerized execution, build an Apptainer image from `containers/apptainer.def` and run the same scripts inside the container.
 
 ## Tests
 
@@ -235,8 +312,10 @@ python tests/test_pipeline.py
 python tests/test_splits.py
 python tests/test_parallel.py
 python tests/test_feature_engineering.py
+python tests/test_metrics.py
+python tests/test_interpretability.py
 ```
 
 ## Notes on the Current Phase
 
-The baseline-model stage (Phase 3) is complete: all five models train, feature scaling is applied where needed, and NaN rows are dropped before fitting. The parallel-preprocessing stage (Phase 5) has landed the `n_jobs` knob, the shared `parallel_groupby_apply` helper, and the parallelized longitudinal feature step. The remaining Phase 5 work is the per-stage benchmark harness, SLURM job scripts, the strong-scaling / data-size sweep on HPC, and the plots that summarize the runtime comparison in the final report.
+The baseline-model stage (Phase 3) is complete: all five models train, feature scaling is applied where needed, and NaN rows are dropped before fitting. The parallel-preprocessing / operations stage now includes the `n_jobs` knob, the shared `parallel_groupby_apply` helper, the benchmark harness, feature-importance export, and SLURM / Apptainer assets for HPC execution. The remaining work is to run the actual experiments, collect benchmark outputs, perform systematic tuning, and turn those outputs into final report plots and analysis.

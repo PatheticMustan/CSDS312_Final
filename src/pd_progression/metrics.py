@@ -5,20 +5,36 @@ from typing import Iterable
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+
+def _as_float_array(values: Iterable[float]) -> np.ndarray:
+    arr = np.asarray(list(values), dtype=float)
+    if arr.size == 0:
+        raise ValueError("Metric inputs must contain at least one value")
+    return arr
 
 
 def rmse(y_true: Iterable[float], y_pred: Iterable[float]) -> float:
-    return math.sqrt(mean_squared_error(y_true, y_pred))
+    y_true_arr = _as_float_array(y_true)
+    y_pred_arr = _as_float_array(y_pred)
+    if y_true_arr.shape != y_pred_arr.shape:
+        raise ValueError("y_true and y_pred must have the same shape")
+    return float(math.sqrt(np.mean(np.square(y_true_arr - y_pred_arr))))
 
 
 def mae(y_true: Iterable[float], y_pred: Iterable[float]) -> float:
-    return float(mean_absolute_error(y_true, y_pred))
+    y_true_arr = _as_float_array(y_true)
+    y_pred_arr = _as_float_array(y_pred)
+    if y_true_arr.shape != y_pred_arr.shape:
+        raise ValueError("y_true and y_pred must have the same shape")
+    return float(np.mean(np.abs(y_true_arr - y_pred_arr)))
 
 
 def smape(y_true: Iterable[float], y_pred: Iterable[float]) -> float:
-    y_true_arr = np.asarray(list(y_true), dtype=float)
-    y_pred_arr = np.asarray(list(y_pred), dtype=float)
+    y_true_arr = _as_float_array(y_true)
+    y_pred_arr = _as_float_array(y_pred)
+    if y_true_arr.shape != y_pred_arr.shape:
+        raise ValueError("y_true and y_pred must have the same shape")
     denominator = np.abs(y_true_arr) + np.abs(y_pred_arr)
     numerator = np.abs(y_pred_arr - y_true_arr)
     mask = denominator != 0
@@ -28,7 +44,19 @@ def smape(y_true: Iterable[float], y_pred: Iterable[float]) -> float:
 
 
 def r2(y_true: Iterable[float], y_pred: Iterable[float]) -> float:
-    return float(r2_score(y_true, y_pred))
+    y_true_arr = _as_float_array(y_true)
+    y_pred_arr = _as_float_array(y_pred)
+    if y_true_arr.shape != y_pred_arr.shape:
+        raise ValueError("y_true and y_pred must have the same shape")
+    if y_true_arr.size < 2:
+        return 0.0
+
+    residual_sum = float(np.sum(np.square(y_true_arr - y_pred_arr)))
+    centered = y_true_arr - float(np.mean(y_true_arr))
+    total_sum = float(np.sum(np.square(centered)))
+    if total_sum == 0.0:
+        return 1.0 if residual_sum == 0.0 else 0.0
+    return float(1.0 - residual_sum / total_sum)
 
 
 def compute_regression_metrics(y_true: Iterable[float], y_pred: Iterable[float]) -> dict[str, float]:
@@ -47,4 +75,3 @@ def metrics_table(metrics_by_run: dict[str, dict[str, float]]) -> pd.DataFrame:
         row.update(metrics)
         rows.append(row)
     return pd.DataFrame(rows)
-

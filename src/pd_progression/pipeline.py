@@ -16,7 +16,9 @@ from .tracking import ExperimentTracker
 IDENTIFIER_COLUMNS = {"patient_id", "visit_id", "visit_month"}
 
 
-TARGET_LIKE_PREFIXES: tuple[str, ...] = ("updrs_",)
+CURRENT_TARGET_PREFIXES: tuple[str, ...] = ("updrs_",)
+FUTURE_TARGET_PREFIXES: tuple[str, ...] = ("future_updrs_",)
+ENGINEERED_CLINICAL_FEATURE_PREFIXES: tuple[str, ...] = ("current_updrs_", "prior_updrs_")
 
 
 @dataclass
@@ -27,20 +29,45 @@ class TrainingResult:
     run_dir: Path
 
 
-def _is_target_like(column: str) -> bool:
-    return any(column.startswith(prefix) for prefix in TARGET_LIKE_PREFIXES)
+def _is_current_target_like(column: str) -> bool:
+    return any(column.startswith(prefix) for prefix in CURRENT_TARGET_PREFIXES)
+
+
+def _is_future_target_like(column: str) -> bool:
+    return any(column.startswith(prefix) for prefix in FUTURE_TARGET_PREFIXES)
+
+
+def _is_engineered_clinical_feature(column: str) -> bool:
+    return any(column.startswith(prefix) for prefix in ENGINEERED_CLINICAL_FEATURE_PREFIXES)
+
+
+def _should_exclude_feature_column(column: str, config: BaselineRunConfig) -> bool:
+    if column in set(config.id_columns) | {config.target_column}:
+        return True
+
+    # Never allow next-visit targets into the feature matrix.
+    if _is_future_target_like(column):
+        return True
+
+    # Raw same-visit UPDRS labels should never enter the feature matrix.
+    if _is_current_target_like(column):
+        return True
+
+    # The engineered current/prior clinical features are only valid for the
+    # future-forecasting setup, not for the original same-visit baselines.
+    if _is_engineered_clinical_feature(column):
+        return not config.target_column.startswith("future_updrs_")
+
+    return False
 
 
 def select_feature_columns(df: pd.DataFrame, config: BaselineRunConfig) -> list[str]:
     if config.feature_columns:
         return [column for column in config.feature_columns if column in df.columns]
 
-    excluded = set(config.id_columns) | {config.target_column}
     feature_columns = []
     for column in df.columns:
-        if column in excluded:
-            continue
-        if _is_target_like(column):
+        if _should_exclude_feature_column(column, config):
             continue
         if pd.api.types.is_numeric_dtype(df[column]):
             feature_columns.append(column)
@@ -127,6 +154,7 @@ def run_training_pipeline(df: pd.DataFrame, config: BaselineRunConfig) -> Traini
     tracker = ExperimentTracker.create(
         config.output_dir,
         model_name=config.model_name,
+        target_column=config.target_column,
         split_strategy=config.split_strategy,
         random_seed=config.random_seed,
     )

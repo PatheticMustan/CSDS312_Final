@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import pickle
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,6 +9,11 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
+
+def _slugify(value: str) -> str:
+    text = re.sub(r"[^A-Za-z0-9._-]+", "_", value.strip())
+    return text.strip("_") or "unknown"
 
 
 def _json_default(value: Any) -> Any:
@@ -24,9 +30,19 @@ class ExperimentTracker:
     run_name: str
 
     @classmethod
-    def create(cls, base_dir: str | Path, model_name: str, split_strategy: str, random_seed: int) -> "ExperimentTracker":
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_name = f"{timestamp}_{model_name}_{split_strategy}_seed{random_seed}"
+    def create(
+        cls,
+        base_dir: str | Path,
+        model_name: str,
+        target_column: str,
+        split_strategy: str,
+        random_seed: int,
+    ) -> "ExperimentTracker":
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        run_name = (
+            f"{timestamp}_{_slugify(model_name)}_{_slugify(target_column)}_"
+            f"{_slugify(split_strategy)}_seed{random_seed}"
+        )
         return cls(Path(base_dir), run_name)
 
     @property
@@ -61,4 +77,3 @@ class ExperimentTracker:
 
     def save_config(self, config: dict[str, Any]) -> Path:
         return self.save_json("config.json", config)
-

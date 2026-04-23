@@ -1,0 +1,28 @@
+Bootstrap: docker
+From: python:3.11-slim
+
+%files
+    . /opt/csds412-pd-progress
+
+%post
+    apt-get update
+    apt-get install -y build-essential
+    rm -rf /var/lib/apt/lists/*
+    python -m pip install --upgrade pip setuptools wheel
+    cd /opt/csds412-pd-progress
+    python -m pip install -r requirements-hpc.txt
+
+%environment
+    export PYTHONUNBUFFERED=1
+    export PYTHONPATH=/opt/csds412-pd-progress/src:${PYTHONPATH}
+
+%runscript
+    cd /opt/csds412-pd-progress
+    exec python "$@"
+
+%help
+    Build:
+        apptainer build pd_progression.sif containers/apptainer.def
+
+    Run training:
+        apptainer exec pd_progression.sif python scripts/train_baseline.py --data data/cleaned/final_dataset.csv --model random_forest --target updrs_1 --split patient --n-jobs 8

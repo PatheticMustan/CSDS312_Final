@@ -1,0 +1,40 @@
+{
+  "model_name": "random_forest",
+  "target_column": "future_updrs_2",
+  "split_strategy": "patient",
+  "random_seed": 42,
+  "validation_fraction": 0.2,
+  "data_path": "data/cleaned",
+  "output_dir": "results/full_experiments_patient/rf_patient/future_updrs_2",
+  "feature_columns": [],
+  "id_columns": [
+    "patient_id",
+    "visit_id",
+    "visit_month"
+  ],
+  "group_column": "patient_id",
+  "time_column": "visit_month",
+  "model_params": {
+    "n_estimators": 200,
+    "max_depth": 12,
+    "min_samples_leaf": 3,
+    "n_jobs": 8
+  },
+  "leakage_prefixes": [
+    "future_",
+    "target_"
+  ],
+  "leakage_columns": [
+    "target_visit_id",
+    "target_visit_month",
+    "forecast_horizon_months",
+    "has_future_target"
+  ],
+  "clip_quantiles": [
+    0.01,
+    0.99
+  ],
+  "imputer_strategy": "median",
+  "compute_feature_importance": false,
+  "feature_importance_repeats": 5
+}

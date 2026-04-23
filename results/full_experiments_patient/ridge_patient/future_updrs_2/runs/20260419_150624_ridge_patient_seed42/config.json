@@ -1,0 +1,37 @@
+{
+  "model_name": "ridge",
+  "target_column": "future_updrs_2",
+  "split_strategy": "patient",
+  "random_seed": 42,
+  "validation_fraction": 0.2,
+  "data_path": "data/cleaned",
+  "output_dir": "results/full_experiments_patient/ridge_patient/future_updrs_2",
+  "feature_columns": [],
+  "id_columns": [
+    "patient_id",
+    "visit_id",
+    "visit_month"
+  ],
+  "group_column": "patient_id",
+  "time_column": "visit_month",
+  "model_params": {
+    "alpha": 0.1
+  },
+  "leakage_prefixes": [
+    "future_",
+    "target_"
+  ],
+  "leakage_columns": [
+    "target_visit_id",
+    "target_visit_month",
+    "forecast_horizon_months",
+    "has_future_target"
+  ],
+  "clip_quantiles": [
+    0.01,
+    0.99
+  ],
+  "imputer_strategy": "median",
+  "compute_feature_importance": false,
+  "feature_importance_repeats": 5
+}

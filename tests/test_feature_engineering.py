@@ -13,6 +13,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from pd_progression.feature_engineering import (
+    CLINICAL_TARGET_COLUMNS,
     LONGITUDINAL_BASE_COLUMNS,
     add_longitudinal_features,
     build_training_dataset,
@@ -124,6 +125,33 @@ def test_build_training_dataset_parallel_matches_serial() -> None:
     parallel = build_training_dataset(clinical, proteins, peptides, n_jobs=2)
 
     pd.testing.assert_frame_equal(serial, parallel)
+
+
+def test_build_training_dataset_adds_current_prior_and_future_clinical_columns() -> None:
+    clinical, proteins, peptides = _make_raw_tables(n_patients=1, visits_per_patient=3)
+    clinical.loc[clinical["visit_id"] == "0_1", "updrs_4"] = pd.NA
+
+    out = build_training_dataset(clinical, proteins, peptides, n_jobs=1)
+    out = out.sort_values(["patient_id", "visit_month", "visit_id"]).reset_index(drop=True)
+
+    for col in CLINICAL_TARGET_COLUMNS:
+        current_col = f"current_{col}"
+        prior_col = f"prior_{col}"
+        future_col = f"future_{col}"
+        assert current_col in out.columns
+        assert f"{current_col}_missing" in out.columns
+        assert prior_col in out.columns
+        assert f"{prior_col}_missing" in out.columns
+        assert future_col in out.columns
+
+    assert list(out["current_updrs_1"]) == [10.0, 11.0, 12.0]
+    assert list(out["prior_updrs_1"]) == [0.0, 10.0, 11.0]
+    assert list(out["prior_updrs_1_missing"]) == [1, 0, 0]
+    assert list(out["future_updrs_1"].iloc[:2]) == [11.0, 12.0]
+    assert pd.isna(out["future_updrs_1"].iloc[2])
+
+    assert list(out["current_updrs_4"]) == [0.0, 0.0, 2.0]
+    assert list(out["current_updrs_4_missing"]) == [0, 1, 0]
 
 
 def test_add_longitudinal_features_lag_and_delta_values() -> None:

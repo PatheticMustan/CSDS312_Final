@@ -26,6 +26,13 @@ LONGITUDINAL_BASE_COLUMNS: tuple[str, ...] = (
     "peptide_abundance_median",
 )
 
+CLINICAL_TARGET_COLUMNS: tuple[str, ...] = (
+    "updrs_1",
+    "updrs_2",
+    "updrs_3",
+    "updrs_4",
+)
+
 
 def _safe_std(series: pd.Series) -> float:
     if len(series) <= 1:
@@ -134,6 +141,34 @@ def add_longitudinal_features(
     return df
 
 
+def add_clinical_history_and_future_targets(
+    df: pd.DataFrame,
+    group_col: str = "patient_id",
+    time_col: str = "visit_month",
+) -> pd.DataFrame:
+    df = df.sort_values([group_col, time_col, "visit_id"]).copy()
+    grouped = df.groupby(group_col, sort=False)
+
+    for col in CLINICAL_TARGET_COLUMNS:
+        if col not in df.columns:
+            continue
+
+        current_col = f"current_{col}"
+        df[current_col] = df[col]
+        df[f"{current_col}_missing"] = df[current_col].isna().astype(int)
+        df[current_col] = df[current_col].fillna(0.0)
+
+        prior_col = f"prior_{col}"
+        df[prior_col] = grouped[col].shift(1)
+        df[f"{prior_col}_missing"] = df[prior_col].isna().astype(int)
+        df[prior_col] = df[prior_col].fillna(0.0)
+
+        future_col = f"future_{col}"
+        df[future_col] = grouped[col].shift(-1)
+
+    return df
+
+
 def build_training_dataset(
     clinical: pd.DataFrame,
     proteins: pd.DataFrame,
@@ -183,4 +218,5 @@ def build_training_dataset(
             merged[col] = merged[col].fillna(0.0)
 
     merged = add_longitudinal_features(merged, n_jobs=n_jobs)
+    merged = add_clinical_history_and_future_targets(merged)
     return merged.sort_values(["patient_id", "visit_month", "visit_id"]).reset_index(drop=True)
