@@ -458,7 +458,50 @@ def plot_feature_importance(summary_df: pd.DataFrame, runs_dir: Path, output_dir
         bbox={"boxstyle": "round,pad=0.35", "facecolor": "white", "alpha": 0.9, "edgecolor": "#dddddd"},
     )
     save_figure(fig, output_dir, "05_feature_importance_best_run")
+def plot_xgboost_feature_importance(summary_df: pd.DataFrame, runs_dir: Path, output_dir: Path) -> None:
+    # Filter only XGBoost runs
+    xgb_df = summary_df[summary_df["model"] == "xgboost"].copy()
 
+    # Pick best XGBoost run
+    best_row = xgb_df.sort_values(["r2", "rmse"], ascending=[False, True]).iloc[0]
+
+    run_dir = runs_dir / best_row["run_name"]
+    config = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with (run_dir / "model.pkl").open("rb") as handle:
+            model = pickle.load(handle)
+
+    importance = extract_feature_importance(model, config["feature_columns"]).head(12).copy()
+    importance = importance.iloc[::-1]
+    importance["feature_label"] = importance["feature"].map(prettify_feature_name)
+
+    fig, ax = plt.subplots(figsize=(10.5, 6.2), constrained_layout=True)
+    ax.barh(
+        importance["feature_label"],
+        importance["importance"],
+        color=PALETTE["xgboost"],
+        alpha=0.92,
+    )
+
+    ax.set_xlabel("Importance")
+    ax.set_title(
+        "Top Features in XGBoost Run\n"
+        f"{target_label(best_row['target'])} ({SPLIT_LABELS[best_row['split']]})"
+    )
+
+    ax.text(
+        0.98,
+        0.03,
+        f"RMSE {best_row['rmse']:.2f}   MAE {best_row['mae']:.2f}   $R^2$ {best_row['r2']:.2f}",
+        transform=ax.transAxes,
+        ha="right",
+        va="bottom",
+        bbox={"boxstyle": "round,pad=0.35", "facecolor": "white", "alpha": 0.9},
+    )
+
+    save_figure(fig, output_dir, "06_xgboost_feature_importance")
 
 def write_manifest(summary_df: pd.DataFrame, benchmarks_dir: Path, output_dir: Path) -> None:
     best = (
@@ -513,6 +556,7 @@ def main() -> int:
     plot_prediction_scatter(summary_df, runs_dir, output_dir)
     plot_benchmark_scaling(benchmarks_dir, output_dir)
     plot_feature_importance(summary_df, runs_dir, output_dir)
+    plot_xgboost_feature_importance(summary_df, runs_dir, output_dir)
     write_manifest(summary_df, benchmarks_dir, output_dir)
 
     print(f"Saved figures to: {output_dir}")
